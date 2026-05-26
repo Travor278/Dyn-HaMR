@@ -15,7 +15,11 @@ from util.tensor import move_to, detach_all
 
 # from .helpers import estimate_initial_trans
 from .params import CameraParams
-import mano
+
+try:
+    import mano  # Optional; only used by old debug snippets below.
+except ImportError:
+    mano = None
 
 J_HAND = len(MANO_JOINTS) - 1  # no root
 

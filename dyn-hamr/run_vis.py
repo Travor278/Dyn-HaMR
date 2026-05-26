@@ -3,6 +3,19 @@ import glob
 
 import imageio
 import numpy as np
+
+for _np_alias, _np_value in {
+    "bool": bool,
+    "int": int,
+    "float": float,
+    "complex": complex,
+    "object": object,
+    "str": str,
+    "unicode": str,
+}.items():
+    if not hasattr(np, _np_alias):
+        setattr(np, _np_alias, _np_value)
+
 import torch
 from torch.utils.data import DataLoader
 from body_model import MANO

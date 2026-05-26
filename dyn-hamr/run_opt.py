@@ -5,6 +5,18 @@ import subprocess
 import random
 import numpy as np
 
+for _np_alias, _np_value in {
+    "bool": bool,
+    "int": int,
+    "float": float,
+    "complex": complex,
+    "object": object,
+    "str": str,
+    "unicode": str,
+}.items():
+    if not hasattr(np, _np_alias):
+        setattr(np, _np_alias, _np_value)
+
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -48,10 +60,17 @@ sys.path.append('src/human_body_prior')
 sys.path.append('HMP/')
 # print(sys.path)
 # print(torch.cuda.memory_summary())
-from HMP.fitting import run_prior
+try:
+    from HMP.fitting import run_prior
+except ImportError:
+    run_prior = None
 
-from human_body_prior.tools.model_loader import load_model
-from human_body_prior.models.vposer_model import VPoser
+try:
+    from human_body_prior.tools.model_loader import load_model
+    from human_body_prior.models.vposer_model import VPoser
+except ImportError:
+    load_model = None
+    VPoser = None
 
 def set_seed(seed=42):
     """
@@ -163,6 +182,8 @@ def run_opt(cfg, dataset, out_dir, device):
 
     # HMP
     if cfg.run_prior and not os.path.exists(os.path.join(out_dir, 'prior')):
+        if run_prior is None:
+            raise ImportError("cfg.run_prior=True, but HMP dependencies are not importable.")
         run_prior(cfg, dataset, out_dir, device, ['smooth_fit'], \
         obs_data, hand_model, cfg, cfg.data, os.path.join(out_dir, 'prior'))
     d = time.time()

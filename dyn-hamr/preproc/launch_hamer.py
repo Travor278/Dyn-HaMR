@@ -1,6 +1,7 @@
 import os
 import subprocess
 import multiprocessing as mp
+import sys
 from concurrent import futures
 
 from preproc.datasets import update_args
@@ -26,13 +27,12 @@ def launch_hamer(gpus, seq, img_dir, res_dir, name, datatype, overwrite=False):
     cmd_args = [
         f"cd {HAMER_DIR};",
         f"CUDA_VISIBLE_DEVICES={gpu}",
-        "python -u run.py",
+        f"{sys.executable} -u run.py",
         f"--img_folder {img_dir} ",
         f"--res_folder {res_dir}/demo_{name}.pkl ",
         f"--batch_size=48 --side_view --save_mesh --full_frame",
         f"--type {datatype}",
         f"--checkpoint {ROOT_DIR}",
-        "--render"
     ]
 
     cmd = " ".join(cmd_args)
