@@ -162,7 +162,7 @@ def run_opt(cfg, dataset, out_dir, device):
         )
     print("OPTIMIZER OPTIONS:", opts)
 
-    writer = SummaryWriter(out_dir)
+    writer = SummaryWriter(out_dir) if cfg.get("use_tensorboard", True) else None
 
     print('start optimization')
     a = time.time()
@@ -188,6 +188,8 @@ def run_opt(cfg, dataset, out_dir, device):
         obs_data, hand_model, cfg, cfg.data, os.path.join(out_dir, 'prior'))
     d = time.time()
     print('prior optimization time: ', d-c)
+    if writer is not None:
+        writer.close()
 
 
 @hydra.main(version_base=None, config_path="confs", config_name="config.yaml")

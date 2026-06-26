@@ -17,7 +17,6 @@ def export_hamer_predictions(res_path, target_dir):
     tracklet_data = joblib.load(res_path)
     for frame, track_data in tracklet_data.items():
         name = os.path.splitext(frame.split("/")[-1])[0]
-        print(track_data['tid'])
         track_dicts = unpack_frame(track_data)
         for tid, pred_dict in track_dicts.items():
             track_dir = os.path.join(target_dir, f"{tid:03d}")
@@ -98,7 +97,6 @@ def unpack_frame(track_data):
         betas = mano["betas"].squeeze()  # (10,)
         hand_pose = mano["hand_pose"].squeeze()  # (23, 3, 3)
         is_right = mano["is_right"]
-        print(is_right, tid, track_data["tid"], track_data["tracked_ids"])
         assert is_right == tid, f'{is_right}, {tid}'
         hand_pose_aa = np.stack(
             [cv2.Rodrigues(x)[0].squeeze() for x in hand_pose], axis=0

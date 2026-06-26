@@ -13,6 +13,7 @@ overwrite: False
 run_opt: True
 run_vis: True
 run_prior: False
+use_tensorboard: True
 datatype: ${data.video_dir}
 vis:
   phases:

@@ -2,6 +2,7 @@ import argparse
 import imageio
 import os
 import subprocess
+import shlex
 
 
 def split_frame(videopath,
@@ -88,17 +89,19 @@ def video_to_frames(
     if os.path.isfile(path):
         os.makedirs(out_dir, exist_ok=True)
 
-        arg_str = f"-copyts -qscale:v 2 -vf fps={fps}"
+        vf = f"fps={fps}"
         if down_scale != 1:
-            arg_str = f"{arg_str},scale='iw/{down_scale}:ih/{down_scale}'"
-        if start_sec > 0:
-            arg_str = f"{arg_str} -ss {start_sec}"
-        if end_sec > start_sec:
-            arg_str = f"{arg_str} -to {end_sec}"
+            vf = f"{vf},scale=iw/{down_scale}:ih/{down_scale}"
 
         yn = "-y" if overwrite else "-n"
-        cmd = f"ffmpeg -i {path} {arg_str} {out_dir}/%06d.{ext} {yn}"
-        print(cmd)
+        cmd = ["ffmpeg"]
+        if start_sec > 0:
+            cmd += ["-ss", str(start_sec)]
+        cmd += ["-i", path, "-copyts", "-qscale:v", "2", "-vf", vf]
+        if end_sec > start_sec:
+            cmd += ["-to", str(end_sec)]
+        cmd += ["-start_number", "1", f"{out_dir}/%06d.{ext}", yn]
+        print(shlex.join(cmd))
     elif os.path.isdir(base_name):
         os.system(f"cp -r {base_name} {out_dir}")
         return 0
@@ -106,7 +109,7 @@ def video_to_frames(
         print(path, os.path.exists(path))
         raise ValueError
 
-    return subprocess.call(cmd, shell=True, stdin=subprocess.PIPE)
+    return subprocess.call(cmd, stdin=subprocess.PIPE)
 
 # def video_to_frames(
 #     path,

@@ -135,10 +135,8 @@ class CameraParams(Params):
         returns (T, 3, 3), (T, 3)
         """
         cam_R, cam_t = self._cam_R, self._cam_t
-        print('get_extrinsics')
         if self.opt_cams:
             raise ValueError
-            print('self.opt_cams:', self.opt_cams)
             # raise ValueError
             dR = batch_rodrigues(self.delta_cam_R)
             cam_R = torch.matmul(cam_R, dR)

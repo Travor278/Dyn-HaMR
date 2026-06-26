@@ -38,9 +38,20 @@ class StageOptimizer(object):
         lr=1.0,
         lbfgs_max_iter=20,
         save_every=10,
+        checkpoint_every=0,
         vis_every=-1,
         save_meshes=True,
+        verbose=False,
+        plot_losses=False,
+        save_final_checkpoint=True,
+        save_optimizer_state=True,
         max_chunk_steps=10,
+        early_stop_metric=None,
+        early_stop_threshold=None,
+        early_stop_patience=1,
+        early_stop_min_iter=0,
+        early_stop_report_every=0,
+        early_stop_stage=None,
         **kwargs,
     ):
         Logger.log(f"INITIALIZING OPTIMIZER {name} for {param_names}")
@@ -57,9 +68,26 @@ class StageOptimizer(object):
         self.loss_dicts = {}
 
         self.save_every = save_every
+        self.checkpoint_every = checkpoint_every
         self.vis_every = vis_every
         self.save_meshes = save_meshes
+        self.verbose = verbose
+        self.plot_losses_enabled = plot_losses
+        self.save_final_checkpoint = save_final_checkpoint
+        self.save_optimizer_state = save_optimizer_state
         self.max_chunk_steps = max_chunk_steps
+        self.early_stop_metric = None if early_stop_metric in (None, "", "none", "None") else str(early_stop_metric)
+        self.early_stop_threshold = (
+            None
+            if early_stop_threshold in (None, "", "none", "None")
+            else float(early_stop_threshold)
+        )
+        self.early_stop_patience = max(1, int(early_stop_patience))
+        self.early_stop_min_iter = max(0, int(early_stop_min_iter))
+        self.early_stop_report_every = max(0, int(early_stop_report_every))
+        self.early_stop_stage = None if early_stop_stage in (None, "", "none", "None") else str(early_stop_stage)
+        self.early_stop_hits = 0
+        self.cur_stats = {}
 
         self.cur_step = 0
 
@@ -69,6 +97,62 @@ class StageOptimizer(object):
         self.last_updated = 0
         self.reached_max = False
         self.reached_max_iter = -1
+
+    @staticmethod
+    def _stats_to_float(stats_dict):
+        out = {}
+        for key, value in stats_dict.items():
+            if hasattr(value, "detach"):
+                value = value.detach().cpu()
+            if hasattr(value, "item"):
+                value = value.item()
+            out[key] = float(value)
+        return out
+
+    def _current_metric_value(self):
+        if not self.early_stop_metric:
+            return None
+        if self.early_stop_metric == "total":
+            return float(self.cur_loss)
+        return self.cur_stats.get(self.early_stop_metric)
+
+    def _check_target_early_stop(self, iter_idx):
+        if self.early_stop_metric is None or self.early_stop_threshold is None:
+            return False
+        if self.early_stop_stage is not None and self.name != self.early_stop_stage:
+            return False
+        metric_value = self._current_metric_value()
+        if metric_value is None:
+            if iter_idx == 0:
+                Logger.log(
+                    f"Early stop metric '{self.early_stop_metric}' not found; "
+                    f"available metrics: {sorted(self.cur_stats.keys())}"
+                )
+            return False
+        if self.early_stop_report_every > 0 and (
+            iter_idx == 0 or (iter_idx + 1) % self.early_stop_report_every == 0
+        ):
+            Logger.log(
+                f"EARLY_STOP_STATUS {self.name} iter={iter_idx + 1} "
+                f"{self.early_stop_metric}={metric_value:.6f} "
+                f"threshold={self.early_stop_threshold:.6f} hits={self.early_stop_hits}"
+            )
+        if iter_idx + 1 < self.early_stop_min_iter:
+            self.early_stop_hits = 0
+            return False
+        if metric_value <= self.early_stop_threshold:
+            self.early_stop_hits += 1
+        else:
+            self.early_stop_hits = 0
+        if self.early_stop_hits >= self.early_stop_patience:
+            Logger.log(
+                f"EARLY_STOP_TRIGGERED {self.name} iter={iter_idx + 1} "
+                f"{self.early_stop_metric}={metric_value:.6f} "
+                f"threshold={self.early_stop_threshold:.6f} "
+                f"patience={self.early_stop_patience}"
+            )
+            return True
+        return False
 
     def set_opt_vars(self, param_names):
         Logger.log("Set param names:")
@@ -112,12 +196,13 @@ class StageOptimizer(object):
         torch.save(param_dict, param_path)
         Logger.log(f"Model saved at {param_path}")
 
-        optim_path = os.path.join(out_dir, f"{self.name}_optim.pth")
-        torch.save(
-            {"optim": self.optim.state_dict(), "cur_step": self.cur_step},
-            optim_path,
-        )
-        Logger.log(f"Optimizer saved at {optim_path}")
+        if self.save_optimizer_state:
+            optim_path = os.path.join(out_dir, f"{self.name}_optim.pth")
+            torch.save(
+                {"optim": self.optim.state_dict(), "cur_step": self.cur_step},
+                optim_path,
+            )
+            Logger.log(f"Optimizer saved at {optim_path}")
 
     def save_results(self, out_dir, seq_name):
         """
@@ -127,18 +212,15 @@ class StageOptimizer(object):
         os.makedirs(out_dir, exist_ok=True)
 
         with torch.no_grad():
-            print('go into get_optim_result from optimizer.py save_results')
             pred_dict = self.model.get_optim_result()
         pred_dict = move_to(detach_all(pred_dict), "cpu")
 
         i = self.cur_step
         for name, results in pred_dict.items():
-            print('save_results, name: ', name)
             # save parameters of trajectory
             out_path = f"{out_dir}/{seq_name}_{i:06d}_{name}_results.npz"
             Logger.log(f"saving params to {out_path}")
             np.savez(out_path, **results)
-            print('cam_R in save_results and its .npz', results['cam_R'])
 
         # also save the cameras
         # print('save the cameras in ptimizer.py save_results')
@@ -155,7 +237,8 @@ class StageOptimizer(object):
         # )
 
         # plot losses
-        self.plot_losses(out_dir)
+        if self.plot_losses_enabled:
+            self.plot_losses(out_dir)
 
     # def save_meshes_all(self, res_dir, obs_data, seq_name, num_steps=-1):
 
@@ -237,11 +320,12 @@ class StageOptimizer(object):
 
     def log_losses(self, stats_dict):
         stats_dict = move_to(detach_all(stats_dict), "cpu")
-        log_cur_stats(
-            stats_dict,
-            iter=self.cur_step,
-            to_stdout=(self.cur_step % self.save_every == 0),
-        )
+        if self.verbose:
+            log_cur_stats(
+                stats_dict,
+                iter=self.cur_step,
+                to_stdout=(self.save_every > 0 and self.cur_step % self.save_every == 0),
+            )
         for loss_name, loss_val in stats_dict.items():
             loss_dict = self.loss_dicts.get(loss_name, {})
             loss_series = loss_dict.get(self.cur_step, [])
@@ -295,26 +379,25 @@ class StageOptimizer(object):
         # time.sleep(5)
 
         # save initial results and vis
-        print('go into save_results in optimizers.py run()')
         self.save_results(res_dir, seq_name)
 
+        final_step = num_iters
         for i in range(self.cur_step, num_iters):
             Logger.log("ITER: %d" % (i))
-
-            if (i + 1) % self.save_every == 0:  # save before
-                self.save_checkpoint(out_dir)
-                self.save_results(res_dir, seq_name)
-            else:
-                self.save_checkpoint(out_dir)
-
-            if (i + 1) % self.vis_every == 0:  # render
-                self.vis_result(res_dir, obs_data, vis)
 
             self.cur_step = i
             self.loss.cur_step = i
 
-            #print("ITER: %d" % (i))
             self.optim_step(obs_data, i, writer)
+
+            if self.checkpoint_every > 0 and (i + 1) % self.checkpoint_every == 0:
+                self.save_checkpoint(out_dir)
+
+            if self.save_every > 0 and (i + 1) % self.save_every == 0:
+                self.save_results(res_dir, seq_name)
+
+            if self.vis_every > 0 and (i + 1) % self.vis_every == 0:
+                self.vis_result(res_dir, obs_data, vis)
 
             # early termination in case of nans
             if np.isnan(self.cur_loss):
@@ -323,15 +406,21 @@ class StageOptimizer(object):
                 print(self.cur_loss, self.kkk, self.ppp)
                 raise ValueError
 
+            if self._check_target_early_stop(i):
+                final_step = i + 1
+                break
+
             # termination for the last chunk
             if self.reached_max and self.reached_max_iter < 0:
                 self.reached_max_iter = i - 1
             if self.reached_max and i - self.reached_max_iter >= self.max_chunk_steps:
+                final_step = i + 1
                 break
 
             # termination for middle chunks
             loss_change = self.prev_loss - self.cur_loss
             if self.last_updated == i - 1 and loss_change == 0:
+                final_step = i + 1
                 break
             if (
                 (self.cur_loss < 0 and loss_change < 100)
@@ -343,10 +432,12 @@ class StageOptimizer(object):
             self.prev_loss = self.cur_loss
 
         # final save and vis step
-        self.cur_step = num_iters
-        self.save_checkpoint(out_dir)
+        self.cur_step = final_step
+        if self.save_final_checkpoint:
+            self.save_checkpoint(out_dir)
         self.save_results(res_dir, seq_name)
-        self.vis_result(res_dir, obs_data, vis)
+        if self.vis_every > 0:
+            self.vis_result(res_dir, obs_data, vis)
         # self.save_meshes_all(res_dir, obs_data, seq_name)
 
     def optim_step(self, obs_data, i, writer=None):
@@ -356,8 +447,10 @@ class StageOptimizer(object):
             loss, stats_dict, preds = self.forward_pass(obs_data)
             #print('******************************', i)
             stats_dict["total"] = loss
-            self.log_losses(move_to(detach_all(stats_dict), "cpu"))
-            self.cur_loss = stats_dict["total"].detach().cpu().item()
+            stats_cpu = move_to(detach_all(stats_dict), "cpu")
+            self.cur_stats = self._stats_to_float(stats_cpu)
+            self.log_losses(stats_cpu)
+            self.cur_loss = self.cur_stats["total"]
             self.kkk = stats_dict
             self.ppp = preds
             loss_keys = stats_dict.keys()
@@ -366,7 +459,8 @@ class StageOptimizer(object):
                     self.cur_loss
                     - 0.04 * stats_dict["pose_prior"].detach().cpu().item()
                 )
-            print("optimizer print", loss, loss.shape, stats_dict, loss.requires_grad)
+            if self.verbose:
+                print("optimizer print", loss, loss.shape, stats_dict, loss.requires_grad)
             loss.backward()
             # print('end of loss backward')
             return loss
@@ -402,7 +496,8 @@ class RootOptimizer(StageOptimizer):
             use_chamfer=use_chamfer,
             robust_loss=robust_loss_type,
             robust_tuning_const=robust_tuning_const,
-            faces=model.body_model.faces_tensor
+            faces=model.body_model.faces_tensor,
+            verbose=self.verbose,
         )
 
     def forward_pass(self, obs_data):
@@ -425,6 +520,14 @@ class SmoothOptimizer(StageOptimizer):
     name = "smooth_fit"
     stage = 1
 
+    @staticmethod
+    def _parse_param_override(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return list(value)
+
     def __init__(
         self,
         model,
@@ -435,11 +538,15 @@ class SmoothOptimizer(StageOptimizer):
         joints2d_sigma=100,
         **kwargs,
     ):
-        param_names = ["trans", "root_orient", "betas", "latent_pose"]
-        if model.opt_scale:
-            param_names += ["world_scale"]
-        if model.opt_cams:
-            param_names += ["cam_f", "delta_cam_R"]
+        param_override = self._parse_param_override(kwargs.pop("smooth_param_names", None))
+        if param_override:
+            param_names = param_override
+        else:
+            param_names = ["trans", "root_orient", "betas", "latent_pose"]
+            if model.opt_scale:
+                param_names += ["world_scale"]
+            if model.opt_cams:
+                param_names += ["cam_f", "delta_cam_R"]
 
         super().__init__(self.name, model, param_names, **kwargs)
 
@@ -450,7 +557,8 @@ class SmoothOptimizer(StageOptimizer):
             use_chamfer=use_chamfer,
             robust_loss=robust_loss_type,
             robust_tuning_const=robust_tuning_const,
-            faces=model.body_model.faces_tensor
+            faces=model.body_model.faces_tensor,
+            verbose=self.verbose,
         )
 
     def forward_pass(self, obs_data):

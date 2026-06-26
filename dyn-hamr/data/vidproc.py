@@ -2,6 +2,7 @@ import os
 import numpy as np
 import subprocess
 import cv2
+import shutil
 
 import preproc.launch_hamer as hamer
 from preproc.launch_slam import split_frames_shots, get_command, check_intrins
@@ -18,9 +19,15 @@ def preprocess_frames(img_dir, src_path, overwrite=False, **kwargs):
         return
     print(f"EXTRACTING FRAMES FROM {src_path} TO {img_dir}")
     print(kwargs)
+    if overwrite and os.path.isdir(img_dir):
+        for name in os.listdir(img_dir):
+            if name.lower().endswith((".jpg", ".jpeg", ".png")):
+                os.remove(os.path.join(img_dir, name))
 
-    # out = video_to_frames(src_path, img_dir, overwrite=overwrite, **kwargs)
-    out = split_frame(src_path, img_dir, overwrite=overwrite, **kwargs)
+    out = video_to_frames(src_path, img_dir, overwrite=overwrite, **kwargs)
+    if out != 0:
+        print("FFmpeg frame extraction failed; falling back to OpenCV full-frame extraction.")
+        out = split_frame(src_path, img_dir, overwrite=overwrite, **kwargs)
     assert out == 0, "FAILED FRAME EXTRACTION"
 
 
@@ -33,6 +40,11 @@ def preprocess_tracks(datatype, img_dir, track_dir, shot_dir, gpu, overwrite=Fal
     if not overwrite and is_nonempty(track_dir):
         print(f"FOUND TRACKS IN {track_dir}")
         return
+    if overwrite:
+        if os.path.isdir(track_dir):
+            shutil.rmtree(track_dir)
+        if os.path.isfile(shot_dir):
+            os.remove(shot_dir)
 
     print(f"RUNNING HAMER ON {img_dir}")
     track_root, seq = os.path.split(track_dir.rstrip("/"))

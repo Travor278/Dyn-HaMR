@@ -10,12 +10,15 @@ frame_opts:
   fps: 25
   start_sec: 0
   end_sec: -1
+  overwrite: False
 use_cams: True
 track_ids: "all"
 shot_idx: 0
 start_idx: 0
 end_idx: 500
 split_cameras: True
+overwrite_tracks: False
+overwrite_cams: False
 name: ${data.seq}-${data.track_ids}-shot-${data.shot_idx}-${data.start_idx}-${data.end_idx}
 sources:
   images: ${data.root}/images/${data.seq}

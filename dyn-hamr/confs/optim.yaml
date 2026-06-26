@@ -6,9 +6,14 @@ optim:
     lr: 1.0
     lbfgs_max_iter: 20
     save_every: 20
+    checkpoint_every: 0
     vis_every: -1
     max_chunk_steps: 20
     save_meshes: False
+    verbose: False
+    plot_losses: False
+    save_final_checkpoint: True
+    save_optimizer_state: True
 
   root:
     num_iters: 50

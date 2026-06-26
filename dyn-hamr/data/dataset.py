@@ -77,7 +77,14 @@ def check_data_sources(args, cfg):
     if args.type == "video":
         preprocess_frames(args.sources.images, args.src_path, **args.frame_opts)
     b = time.time()
-    preprocess_tracks(cfg.datatype, args.sources.images, args.sources.tracks, args.sources.shots, gpu=cfg.gpu)
+    preprocess_tracks(
+        cfg.datatype,
+        args.sources.images,
+        args.sources.tracks,
+        args.sources.shots,
+        gpu=cfg.gpu,
+        overwrite=args.get("overwrite_tracks", False),
+    )
     c = time.time()
     preprocess_cameras(args, overwrite=args.get("overwrite_cams", False))
     d = time.time()
