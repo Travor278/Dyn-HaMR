@@ -6,7 +6,7 @@ import time
 import torch
 import trimesh
 
-os.environ["PYOPENGL_PLATFORM"] = "egl"
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 
 import pyrender
 from pyrender.constants import RenderFlags

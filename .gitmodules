@@ -5,7 +5,7 @@
 [submodule "third-party/hamer"]
 	path = third-party/hamer
 	url = https://github.com/Travor278/hamer.git
-	branch = main
+	branch = roboflywheel-trackb-compat
 [submodule "third-party/vipe"]
 	path = third-party/vipe
 	url = https://github.com/nv-tlabs/vipe
